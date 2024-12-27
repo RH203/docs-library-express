@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>JSDoc: Source: service/public-service.js</title>
+
+    <script src="scripts/prettify/prettify.js"></script>
+    <script src="scripts/prettify/lang-css.js"></script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link
+      type="text/css"
+      rel="stylesheet"
+      href="styles/prettify-tomorrow.css"
+    />
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css" />
+  </head>
+
+  <body>
+    <div id="main">
+      <h1 class="page-title">Source: service/public-service.js</h1>
+
+      <section>
+        <article>
+          <pre
+            class="prettyprint source linenums"
+          ><code>import { ResponseError } from "../error/response-error.js";
+import { prismaClient } from "../app/database.js";
+import bcrypt from "bcrypt";
+import { Role } from "@prisma/client";
+import { validate } from "../validation/validation.js";
+import {
+  loginUserValidation,
+  registrationUserValidation,
+} from "../validation/user-validation.js";
+import { generateJWT } from "../helpers/jwt-config.js";
+import { capitalizeWord } from "../helpers/string-helper.js";
+import {
+  loanValidation,
+  returnValidation,
+} from "../validation/loan-validation.js";
+import { tr } from "@faker-js/faker";
+
+/**
+ * Registrasi pengguna baru
+ *
+ * Fungsi untuk melakukan registrasi akun pengguna baru. Mengecek apakah email yang dimasukkan sudah ada.
+ * Jika sudah ada, maka akan mengembalikan pesan kesalahan. Jika tidak, password akan di-hash dan akun pengguna
+ * baru akan dibuat dengan data yang diterima dari body request.
+ *
+ * @async
+ * @function registrasi
+ * @param {object} req - Request objek yang berisi data pengguna yang akan didaftarkan
+ * @param {object} res - Response objek yang akan mengirimkan hasil operasi ke client
+ * @returns {Promise&lt;object>} Data pengguna yang baru saja terdaftar
+ * @throws {ResponseError} 400 - Jika email sudah terdaftar
+ */
+const registrasi = async (req, res) => {
+  const data = validate(registrationUserValidation, req.body);
+
+  const checkAccountDuplicate = await prismaClient.student.findUnique({
+    where: { email: data.email },
+  });
+
+  if (checkAccountDuplicate) {
+    throw new ResponseError(400, "email already exists!");
+  }
+
+  data.password = await bcrypt.hash(data.password, 10);
+  // Capital nama
+  data.name = capitalizeWord(data.name);
+
+  const result = await prismaClient.student.create({
+    data: {
+      name: data.name,
+      email: data.email,
+      password: data.password,
+      role: Role.Student,
+      gender: data.gender,
+    },
+  });
+
+  return prismaClient.student.findFirst({
+    where: { id: result.id },
+  });
+};
+
+/**
+ * Login pengguna
+ *
+ * Fungsi untuk memverifikasi email dan password pengguna. Jika data yang dimasukkan salah,
+ * maka akan mengembalikan pesan kesalahan. Jika berhasil, akan mengembalikan token JWT untuk otentikasi lebih lanjut.
+ *
+ * @async
+ * @function login
+ * @param {object} req - Request objek yang berisi data login pengguna
+ * @param {object} res - Response objek yang akan mengirimkan hasil operasi ke client
+ * @returns {Promise&lt;string>} Token JWT untuk otentikasi pengguna
+ * @throws {ResponseError} 400 - Jika email atau password salah
+ */
+const login = async (req, res) => {
+  const data = validate(loginUserValidation, req.body);
+
+  const account = await prismaClient.student.findFirst({
+    where: { email: data.email },
+    select: { name: true, email: true, password: true, role: true },
+  });
+
+  if (!account) {
+    throw new ResponseError(400, "Email or password is wrong!");
+  }
+
+  const isPasswordSame = await bcrypt.compare(data.password, account.password);
+
+  if (!isPasswordSame) {
+    throw new ResponseError(400, "Email or password is wrong!");
+  }
+
+  return generateJWT(account.name, account.role);
+};
+
+/**
+ * Mendapatkan daftar buku
+ *
+ * Fungsi untuk mengambil semua daftar buku yang tersedia. Buku yang sudah dihapus akan diabaikan,
+ * dan informasi terkait genre serta penerbit buku akan ditambahkan.
+ *
+ * @async
+ * @function getBookList
+ * @param {object} req - Request objek yang berisi permintaan daftar buku
+ * @param {object} res - Response objek yang akan mengirimkan hasil operasi ke client
+ * @returns {Promise&lt;object[]>} Daftar buku yang tersedia
+ */
+const getBookList = async (req, res) => {
+  const data = await prismaClient.book.findMany({
+    select: {
+      id: true,
+      title: true,
+      author: true,
+      description: true,
+      isbn: true,
+      stok: true,
+      deteled_at: true,
+      genres: {
+        select: {
+          genre: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
+      publisher: {
+        select: {
+          name: true,
+        },
+      },
+    },
+  });
+
+  return data
+    .filter(book => book.deteled_at === null)
+    .map(book => ({
+      id: book.id,
+      title: book.title,
+      author: book.author,
+      description: book.description,
+      isbn: book.isbn,
+      stok: book.stok,
+      genres: book.genres.map(genre => genre.genre.name),
+      publisher: book.publisher?.name || "Unknown",
+    }));
+};
+
+/**
+ * Mendapatkan detail buku berdasarkan ID
+ *
+ * Fungsi untuk mengambil data detail buku berdasarkan ID. Jika buku tidak ditemukan atau sudah dihapus,
+ * maka akan mengembalikan pesan kesalahan.
+ *
+ * @async
+ * @function getBookById
+ * @param {string} id - ID buku yang akan dicari
+ * @returns {Promise&lt;object>} Detail buku yang ditemukan
+ * @throws {ResponseError} 400 - Jika buku tidak ditemukan atau sudah dihapus
+ */
+const getBookById = async id => {
+  const data = await prismaClient.book.findFirst({
+    where: { id: id },
+    select: {
+      id: true,
+      title: true,
+      author: true,
+      description: true,
+      isbn: true,
+      stok: true,
+      deteled_at: true,
+      genres: {
+        select: {
+          genre: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
+      publisher: {
+        select: {
+          name: true,
+        },
+      },
+    },
+  });
+
+  if (!data || data.deleted_at === null) {
+    throw new ResponseError(400, "No book found with id " + req.params.id);
+  }
+
+  return {
+    id: data.id,
+    title: data.title,
+    author: data.author,
+    description: data.description,
+    isbn: data.isbn,
+    stok: data.stok,
+    genres: data.genres.map(genre => genre.genre.name),
+    publisher: data.publisher?.name || "Unknown",
+  };
+};
+
+// TODO: Melihat member lain yang aktif
+
+/**
+ * Meminjamkan buku
+ *
+ * Fungsi untuk meminjam buku. Mengecek apakah buku masih tersedia, apakah pengguna sudah meminjam buku yang sama,
+ * dan apakah stok buku mencukupi. Jika semua validasi lulus, transaksi peminjaman akan diproses dan stok buku akan dikurangi.
+ *
+ * @async
+ * @function loanBook
+ * @param {object} req - Request objek yang berisi data peminjaman buku
+ * @param {object} res - Response objek yang akan mengirimkan hasil operasi ke client
+ * @returns {Promise&lt;object>} Data peminjaman yang berhasil
+ * @throws {ResponseError} 400 - Jika buku sudah dipinjam atau stok buku habis
+ * @throws {ResponseError} 404 - Jika buku tidak ditemukan atau sudah dihapus
+ */
+const loanBook = async (req, res) => {
+  const data = validate(loanValidation, req.body);
+
+  const checkBookAlreadyDeleted = await prismaClient.book.findFirst({
+    where: {
+      book_id: data.book_id,
+    },
+  });
+
+  if (!checkBookAlreadyDeleted) {
+    throw new ResponseError(
+      404,
+      "The book is already deleted or does not exist.",
+    );
+  }
+
+  const isBookAlreadyBorrowedByStudent = await prismaClient.peminjaman.count({
+    where: {
+      book_id: data.book_id,
+      student_id: data.student_id,
+    },
+  });
+
+  if (isBookAlreadyBorrowedByStudent >= 1) {
+    throw new ResponseError(
+      400,
+      "The book is already borrowed. Please return it first.",
+    );
+  }
+
+  const stockBook = await prismaClient.book.findFirst({
+    where: { id: data.book_id },
+    select: { stok: true },
+  });
+
+  if (stockBook.stok &lt;= 0) {
+    throw new ResponseError(400, "Book is out of stock.");
+  }
+
+  const [loan, updateStock] = await prismaClient.$transaction([
+    prismaClient.peminjaman.create({
+      data: {
+        borrow_date: new Date(),
+        return_date: new Date(),
+        student_id: data.student_id,
+        book_id: data.book_id,
+        notes: data.notes,
+      },
+    }),
+    prismaClient.book.update({
+      where: { id: data.book_id },
+      data: {
+        stok: {
+          decrement: 1,
+        },
+      },
+    }),
+  ]);
+
+  if (!updateStock) {
+    throw new ResponseError(500, "Error occurred while updating book stock.");
+  }
+  return loan;
+};
+
+/**
+ * Mengembalikan buku
+ *
+ * Fungsi untuk mengembalikan buku yang sudah dipinjam. Mengecek apakah buku yang dikembalikan benar-benar dipinjam oleh pengguna
+ * dan memperbarui stok buku yang dikembalikan.
+ *
+ * @async
+ * @function returnBook
+ * @param {object} req - Request objek yang berisi data pengembalian buku
+ * @param {object} res - Response objek yang akan mengirimkan hasil operasi ke client
+ * @returns {Promise&lt;object>} Pesan sukses pengembalian buku
+ * @throws {ResponseError} 400 - Jika buku yang dikembalikan tidak pernah dipinjam
+ */
+const returnBook = async (req, res) => {
+  const data = validate(returnValidation, req.body);
+
+  const isBookBorrowedByStudent = await prismaClient.peminjaman.count({
+    where: {
+      book_id: data.book_id,
+      student_id: data.student_id,
+    },
+  });
+
+  if (isBookBorrowedByStudent &lt; 1) {
+    throw new ResponseError(400, "The user has not borrowed this book.");
+  }
+
+  const updateBook = await prismaClient.$transaction([
+    prismaClient.book.update({
+      where: { id: data.book_id },
+      data: { stok: { increment: 1 } },
+    }),
+    prismaClient.peminjaman.delete({
+      where: {
+        student_id_book_id: {
+          student_id: data.student_id,
+          book_id: data.book_id,
+        },
+      },
+    }),
+  ]);
+
+  return { message: "Book successfully returned and stock updated." };
+};
+
+export default {
+  registrasi,
+  login,
+  getBookList,
+  getBookById,
+  loanBook,
+  returnBook,
+};
+</code></pre>
+        </article>
+      </section>
+    </div>
+
+    <nav>
+      <h2><a href="index.html">Home</a></h2>
+      <h3>Classes</h3>
+      <ul>
+        <li><a href="ResponseError.html">ResponseError</a></li>
+      </ul>
+      <h3>Global</h3>
+      <ul>
+        <li><a href="global.html#addNewBook">addNewBook</a></li>
+        <li><a href="global.html#authMiddleware">authMiddleware</a></li>
+        <li><a href="global.html#capitalizeWord">capitalizeWord</a></li>
+        <li><a href="global.html#errorMiddleware">errorMiddleware</a></li>
+        <li><a href="global.html#generateJWT">generateJWT</a></li>
+        <li><a href="global.html#getBookById">getBookById</a></li>
+        <li><a href="global.html#getBookList">getBookList</a></li>
+        <li><a href="global.html#loanBook">loanBook</a></li>
+        <li><a href="global.html#loanValidation">loanValidation</a></li>
+        <li><a href="global.html#logger">logger</a></li>
+        <li><a href="global.html#login">login</a></li>
+        <li>
+          <a href="global.html#loginUserValidation">loginUserValidation</a>
+        </li>
+        <li><a href="global.html#newBookValidation">newBookValidation</a></li>
+        <li><a href="global.html#prismaClient">prismaClient</a></li>
+        <li><a href="global.html#registrasi">registrasi</a></li>
+        <li>
+          <a href="global.html#registrationUserValidation"
+            >registrationUserValidation</a
+          >
+        </li>
+        <li><a href="global.html#removeBook">removeBook</a></li>
+        <li>
+          <a href="global.html#removeBookValidationById"
+            >removeBookValidationById</a
+          >
+        </li>
+        <li><a href="global.html#returnBook">returnBook</a></li>
+        <li><a href="global.html#returnValidation">returnValidation</a></li>
+        <li><a href="global.html#rolesMiddleware">rolesMiddleware</a></li>
+        <li><a href="global.html#updateBook">updateBook</a></li>
+        <li>
+          <a href="global.html#updateBookValidation">updateBookValidation</a>
+        </li>
+        <li><a href="global.html#validate">validate</a></li>
+        <li><a href="global.html#verifyJWT">verifyJWT</a></li>
+      </ul>
+    </nav>
+
+    <br class="clear" />
+
+    <footer>
+      Documentation generated by
+      <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.4</a> on Wed Dec 25
+      2024 21:16:57 GMT+0700 (Western Indonesia Time)
+    </footer>
+
+    <script>
+      prettyPrint();
+    </script>
+    <script src="scripts/linenumber.js"></script>
+  </body>
+</html>

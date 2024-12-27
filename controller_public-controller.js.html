@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>JSDoc: Source: controller/public-controller.js</title>
+
+    <script src="scripts/prettify/prettify.js"></script>
+    <script src="scripts/prettify/lang-css.js"></script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link
+      type="text/css"
+      rel="stylesheet"
+      href="styles/prettify-tomorrow.css"
+    />
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css" />
+  </head>
+
+  <body>
+    <div id="main">
+      <h1 class="page-title">Source: controller/public-controller.js</h1>
+
+      <section>
+        <article>
+          <pre
+            class="prettyprint source linenums"
+          ><code>import publicService from "../service/public-service.js";
+import { logger } from "../app/logger.js";
+
+/**
+ * Controller untuk registrasi pengguna.
+ *
+ * Fungsi ini menangani request registrasi pengguna baru, dengan memanggil
+ * `publicService.registrasi()` untuk memproses data registrasi. Setelah berhasil,
+ * mengirimkan respons dengan status 200 dan pesan sukses.
+ *
+ * @param {express.Request} req - Request objek yang berisi data registrasi.
+ * @param {express.Response} res - Response objek untuk mengirimkan hasil operasi ke client.
+ * @param {express.NextFunction} next - Fungsi middleware untuk meneruskan error ke handler berikutnya.
+ *
+ * @returns {void} Mengirimkan respons JSON dengan status 200 jika berhasil, atau error jika gagal.
+ */
+const registrasi = async (req, res, next) => {
+  try {
+    const result = await publicService.registrasi(req);
+
+    res.status(200).json({
+      status: 200,
+      message: result,
+    });
+  } catch (e) {
+    next(e);
+  }
+};
+
+/**
+ * Controller untuk login pengguna.
+ *
+ * Fungsi ini menangani request login, dengan memanggil `publicService.login()`
+ * untuk memproses data login. Setelah berhasil, mengirimkan respons dengan status 200
+ * dan data pengguna yang berhasil login.
+ *
+ * @param {express.Request} req - Request objek yang berisi data login.
+ * @param {express.Response} res - Response objek untuk mengirimkan hasil operasi ke client.
+ * @param {express.NextFunction} next - Fungsi middleware untuk meneruskan error ke handler berikutnya.
+ *
+ * @returns {void} Mengirimkan respons JSON dengan status 200 dan data pengguna jika berhasil, atau error jika gagal.
+ */
+const login = async (req, res, next) => {
+  try {
+    const result = await publicService.login(req);
+    res.status(200).json({
+      status: 200,
+      data: result,
+    });
+  } catch (e) {
+    next(e);
+  }
+};
+
+/**
+ * Controller untuk mendapatkan daftar buku.
+ *
+ * Fungsi ini memanggil `publicService.getBookList()` untuk mendapatkan semua buku
+ * yang tersedia. Setelah berhasil, mengirimkan respons dengan status 200 dan daftar buku.
+ *
+ * @param {express.Request} req - Request objek yang diterima dari client.
+ * @param {express.Response} res - Response objek untuk mengirimkan hasil operasi ke client.
+ * @param {express.NextFunction} next - Fungsi middleware untuk meneruskan error ke handler berikutnya.
+ *
+ * @returns {void} Mengirimkan respons JSON dengan status 200 dan data buku jika berhasil, atau error jika gagal.
+ */
+const getBookList = async (req, res, next) => {
+  try {
+    const result = await publicService.getBookList();
+
+    res.status(200).json({
+      status: 200,
+      data: result,
+    });
+  } catch (e) {
+    next(e);
+  }
+};
+
+/**
+ * Controller untuk mendapatkan buku berdasarkan ID.
+ *
+ * Fungsi ini mengambil ID buku dari parameter request, memanggil
+ * `publicService.getBookById()` untuk mendapatkan buku berdasarkan ID.
+ * Jika buku ditemukan, mengirimkan respons dengan status 200 dan data buku.
+ * Jika tidak ditemukan, mengirimkan respons dengan status 404.
+ *
+ * @param {express.Request} req - Request objek yang berisi parameter ID buku.
+ * @param {express.Response} res - Response objek untuk mengirimkan hasil operasi ke client.
+ * @param {express.NextFunction} next - Fungsi middleware untuk meneruskan error ke handler berikutnya.
+ *
+ * @returns {void} Mengirimkan respons JSON dengan status 200 dan data buku jika berhasil, atau 404 jika tidak ditemukan.
+ */
+const getBookById = async (req, res, next) => {
+  try {
+    const id = req.params.id;
+    if (!id) {
+      res.status(404).json({
+        status: 404,
+        message: "Not Found",
+      });
+      return;
+    }
+
+    const result = await publicService.getBookById(parseInt(id));
+
+    res.status(200).json({
+      status: 200,
+      data: result,
+    });
+  } catch (e) {
+    next(e);
+  }
+};
+
+/**
+ * Controller untuk meminjam buku.
+ *
+ * Fungsi ini menerima request untuk meminjam buku dan memanggil
+ * `publicService.loanBook()` untuk memproses transaksi peminjaman.
+ * Setelah berhasil, mengirimkan respons dengan status 200 dan data peminjaman.
+ *
+ * @param {express.Request} req - Request objek yang berisi data peminjaman buku.
+ * @param {express.Response} res - Response objek untuk mengirimkan hasil operasi ke client.
+ * @param {express.NextFunction} next - Fungsi middleware untuk meneruskan error ke handler berikutnya.
+ *
+ * @returns {void} Mengirimkan respons JSON dengan status 200 dan data peminjaman jika berhasil, atau error jika gagal.
+ */
+const loanBook = async (req, res, next) => {
+  try {
+    logger.info(req.body);
+    const result = await publicService.loanBook(req);
+    res.status(200).json({
+      status: 200,
+      data: result,
+    });
+  } catch (e) {
+    next(e);
+  }
+};
+
+/**
+ * Controller untuk mengembalikan buku.
+ *
+ * Fungsi ini menerima request untuk mengembalikan buku dan memanggil
+ * `publicService.returnBook()` untuk memproses pengembalian buku.
+ * Setelah berhasil, mengirimkan respons dengan status 200 dan pesan pengembalian.
+ *
+ * @param {express.Request} req - Request objek yang berisi data pengembalian buku.
+ * @param {express.Response} res - Response objek untuk mengirimkan hasil operasi ke client.
+ * @param {express.NextFunction} next - Fungsi middleware untuk meneruskan error ke handler berikutnya.
+ *
+ * @returns {void} Mengirimkan respons JSON dengan status 200 dan pesan pengembalian jika berhasil, atau error jika gagal.
+ */
+const returnBook = async (req, res, next) => {
+  try {
+    const result = await publicService.returnBook(req);
+
+    res.status(200).json({
+      status: 200,
+      data: result.message,
+    });
+  } catch (e) {
+    next(e);
+  }
+};
+
+export default {
+  registrasi,
+  login,
+  getBookList,
+  getBookById,
+  loanBook,
+  returnBook,
+};
+</code></pre>
+        </article>
+      </section>
+    </div>
+
+    <nav>
+      <h2><a href="index.html">Home</a></h2>
+      <h3>Classes</h3>
+      <ul>
+        <li><a href="ResponseError.html">ResponseError</a></li>
+      </ul>
+      <h3>Global</h3>
+      <ul>
+        <li><a href="global.html#addNewBook">addNewBook</a></li>
+        <li><a href="global.html#authMiddleware">authMiddleware</a></li>
+        <li><a href="global.html#capitalizeWord">capitalizeWord</a></li>
+        <li><a href="global.html#errorMiddleware">errorMiddleware</a></li>
+        <li><a href="global.html#generateJWT">generateJWT</a></li>
+        <li><a href="global.html#getBookById">getBookById</a></li>
+        <li><a href="global.html#getBookList">getBookList</a></li>
+        <li><a href="global.html#loanBook">loanBook</a></li>
+        <li><a href="global.html#loanValidation">loanValidation</a></li>
+        <li><a href="global.html#logger">logger</a></li>
+        <li><a href="global.html#login">login</a></li>
+        <li>
+          <a href="global.html#loginUserValidation">loginUserValidation</a>
+        </li>
+        <li><a href="global.html#newBookValidation">newBookValidation</a></li>
+        <li><a href="global.html#prismaClient">prismaClient</a></li>
+        <li><a href="global.html#registrasi">registrasi</a></li>
+        <li>
+          <a href="global.html#registrationUserValidation"
+            >registrationUserValidation</a
+          >
+        </li>
+        <li><a href="global.html#removeBook">removeBook</a></li>
+        <li>
+          <a href="global.html#removeBookValidationById"
+            >removeBookValidationById</a
+          >
+        </li>
+        <li><a href="global.html#returnBook">returnBook</a></li>
+        <li><a href="global.html#returnValidation">returnValidation</a></li>
+        <li><a href="global.html#rolesMiddleware">rolesMiddleware</a></li>
+        <li><a href="global.html#updateBook">updateBook</a></li>
+        <li>
+          <a href="global.html#updateBookValidation">updateBookValidation</a>
+        </li>
+        <li><a href="global.html#validate">validate</a></li>
+        <li><a href="global.html#verifyJWT">verifyJWT</a></li>
+      </ul>
+    </nav>
+
+    <br class="clear" />
+
+    <footer>
+      Documentation generated by
+      <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.4</a> on Wed Dec 25
+      2024 21:16:57 GMT+0700 (Western Indonesia Time)
+    </footer>
+
+    <script>
+      prettyPrint();
+    </script>
+    <script src="scripts/linenumber.js"></script>
+  </body>
+</html>
